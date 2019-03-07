@@ -53,23 +53,24 @@ type TypeMapper interface {
 }
 
 type injector struct {
-	values map[reflect.Type]reflect.Value
+	values map[reflect.Type] reflect.Value
 	parent Injector
 }
 
 // InterfaceOf dereferences a pointer to an Interface type.
 // It panics if value is not an pointer to an interface.
 func InterfaceOf(value interface{}) reflect.Type {
+	//获取value的类型t
 	t := reflect.TypeOf(value)
-
+	//递归解引用，得到最终元素类型t
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-
+	//这块对类型的约束是：t必须是指向interface{}的指针
 	if t.Kind() != reflect.Interface {
 		panic("Called inject.InterfaceOf with a value that is not a pointer to an interface. (*MyInterface)(nil)")
 	}
-
+	//返回类型t
 	return t
 }
 
@@ -106,33 +107,37 @@ func (inj *injector) Invoke(f interface{}) ([]reflect.Value, error) {
 // that is tagged with 'inject'.
 // Returns an error if the injection fails.
 func (inj *injector) Apply(val interface{}) error {
+	//获取val的值
 	v := reflect.ValueOf(val)
-
+	//解引用
 	for v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-
+	//只能注入结构体
 	if v.Kind() != reflect.Struct {
 		return nil // Should not panic here ?
 	}
-
+	//获取val的类型
 	t := v.Type()
-
+	//逐个遍历val的字段f...
 	for i := 0; i < v.NumField(); i++ {
+		// reflect.value用来设置字段值，要求f.CanSet()为true
 		f := v.Field(i)
+		// reflect.type用来获取字段tags，依赖注入的标签名是"inject"
 		structField := t.Field(i)
 		if f.CanSet() && (structField.Tag == "inject" || structField.Tag.Get("inject") != "") {
+			//获取字段f的类型，该类型用来从注册容器中查找依赖对象
 			ft := f.Type()
+			//从容器中取字段f的类型ft对应的依赖对象
 			v := inj.Get(ft)
+			//如果该依赖对象是无效的（空指针），报错
 			if !v.IsValid() {
 				return fmt.Errorf("Value not found for type %v", ft)
 			}
-
+			//执行注入
 			f.Set(v)
 		}
-
 	}
-
 	return nil
 }
 
@@ -156,11 +161,16 @@ func (i *injector) Set(typ reflect.Type, val reflect.Value) TypeMapper {
 }
 
 func (i *injector) Get(t reflect.Type) reflect.Value {
-	val := i.values[t]
 
+	//根据t获取依赖对象val
+	val := i.values[t]
+	//如果val不是nil，直接返回该依赖对象
 	if val.IsValid() {
 		return val
 	}
+
+	//如果val是nil，则判断：若t是interface类型（不是struct类型），且容器中有依赖对象实现了该interface，就返回第一个
+	//实现该interface的依赖对象。
 
 	// no concrete types found, try to find implementors
 	// if t is an interface
@@ -175,7 +185,7 @@ func (i *injector) Get(t reflect.Type) reflect.Value {
 
 	// Still no type found, try to look it up on the parent
 	if !val.IsValid() && i.parent != nil {
-		val = i.parent.Get(t)
+		val = i.parent.Get(t) //递归回溯
 	}
 
 	return val
