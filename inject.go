@@ -59,20 +59,41 @@ type injector struct {
 
 // InterfaceOf dereferences a pointer to an Interface type.
 // It panics if value is not an pointer to an interface.
+
+// 从 interface 的指针中获取元素类型，以(*SpecialString)(nil)为例：
+//
+// 	type SpecialString interface{}
+// 	func main() {   
+//   	fmt.Println(inject.InterfaceOf((*interface{})(nil)))      
+//   	fmt.Println(inject.InterfaceOf((*SpecialString)(nil)))
+// 	}
+// 输出：
+// 	interface {}
+// 	main.SpecialString
+//
+// 可见，指向某接口的空指针 (*SpecialString)(nil) ，虽然 data 部分是nil，但是却可以取出它的type。
+
 func InterfaceOf(value interface{}) reflect.Type {
-	//获取value的类型t
-	t := reflect.TypeOf(value)
-	//递归解引用，得到最终元素类型t
+	//获取 value 的类型 t
+	t := reflect.TypeOf(value)           //t是*main.SpecialString，t.Kind()是ptr，t.Elem()是main.SpecialString
+	//循环解引用（指向指针的指针），得到实际元素类型t
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	//这块对类型的约束是：t必须是指向interface{}的指针
+	//这块对类型的约束是：t必须是指向interface{}的指针，如果不是Interface{}类型，报panic
 	if t.Kind() != reflect.Interface {
 		panic("Called inject.InterfaceOf with a value that is not a pointer to an interface. (*MyInterface)(nil)")
 	}
-	//返回类型t
+	//返回类型t，也即 (*SpecialString)(nil) 的元素原始类型 main.SpecialString
 	return t
 }
+
+
+
+
+
+
+
 
 // New returns a new Injector.
 func New() Injector {
@@ -86,6 +107,13 @@ func New() Injector {
 // Returns a slice of reflect.Value representing the returned values of the function.
 // Returns an error if the injection fails.
 // It panics if f is not a function
+
+
+
+
+// 将函数的值从空接口中反射出来，然后使用 reflect.Call 来传递参数并调用它。
+// 参数个数从 t.NumIn() 获取，循环遍历参数类型，再通过 Get 方法从 values map[reflect.Type]reflect.Value 获取对应类型的具体参数对象。
+
 func (inj *injector) Invoke(f interface{}) ([]reflect.Value, error) {
 	t := reflect.TypeOf(f)
 
@@ -113,7 +141,7 @@ func (inj *injector) Apply(val interface{}) error {
 	for v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	//只能注入结构体
+	//只能对结构体进行依赖对象的注入
 	if v.Kind() != reflect.Struct {
 		return nil // Should not panic here ?
 	}
@@ -148,10 +176,20 @@ func (i *injector) Map(val interface{}) TypeMapper {
 	return i
 }
 
+
+
+
+
 func (i *injector) MapTo(val interface{}, ifacePtr interface{}) TypeMapper {
 	i.values[InterfaceOf(ifacePtr)] = reflect.ValueOf(val)
 	return i
 }
+
+
+
+
+
+
 
 // Maps the given reflect.Type to the given reflect.Value and returns
 // the Typemapper the mapping has been registered in.
@@ -169,8 +207,8 @@ func (i *injector) Get(t reflect.Type) reflect.Value {
 		return val
 	}
 
-	//如果val是nil，则判断：若t是interface类型（不是struct类型），且容器中有依赖对象实现了该interface，就返回第一个
-	//实现该interface的依赖对象。
+	// 如果val是nil，则判断：若t是interface类型（不是struct类型），
+	// 且容器中有依赖对象实现了该interface，就返回第一个实现该interface的依赖对象。
 
 	// no concrete types found, try to find implementors
 	// if t is an interface
